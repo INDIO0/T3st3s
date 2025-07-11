@@ -1,8 +1,0 @@
-evil-twin-attack/
-├── config/
-│   ├── evil_twin.conf      # Config do hostapd
-│   └── dnsmasq.conf        # Config do DHCP/DNS
-├── scripts/
-│   └── evil_twin.sh        # Script de automação
-├── captures/               # Pasta para armazenar .pcap
-└── README.md               # Instruções detalhadas
